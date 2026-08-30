@@ -314,7 +314,11 @@ static void _lcd_bed_tramming_get_next_position() {
     // Select next corner coordinates
     _lcd_bed_tramming_get_next_position();
 
-    line_to_current_position(manual_feedrate_mm_s.x);
+    #if ENABLED(ODOS3D_LEGACY_UI)
+      line_to_current_position(feedRate_t(8000.0f / 60.0f));
+    #else
+      line_to_current_position(manual_feedrate_mm_s.x);
+    #endif
     line_to_z(BED_TRAMMING_HEIGHT);
     if (++bed_corner >= available_points) bed_corner = 0;
   }
@@ -341,6 +345,9 @@ void _lcd_bed_tramming_homing() {
         , _lcd_goto_next_corner
         , []{
             line_to_z(BED_TRAMMING_Z_HOP); // Raise Z off the bed when done
+            #if ENABLED(ODOS3D_LEGACY_UI)
+              do_blocking_move_to_xy(10, 10, feedRate_t(8000.0f / 60.0f));
+            #endif
             TERN_(HAS_LEVELING, set_bed_leveling_enabled(menu_leveling_was_active));
             ui.goto_previous_screen_no_defer();
           }

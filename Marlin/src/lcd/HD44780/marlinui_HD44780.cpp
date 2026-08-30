@@ -466,6 +466,12 @@ void MarlinUI::clear_lcd() { lcd.clear(); }
         lcd_scroll(0, 3, F(STRING), LCD_WIDTH, DELAY); \
     }
 
+    #if ENABLED(ODOS3D_LEGACY_UI)
+      lcd_put_u8str(4, 1, F("Odos3D-Lab"));
+      CENTER_OR_SCROLL(SHORT_BUILD_VERSION, 1500);
+      return;
+    #endif
+
     //
     // Show the Marlin logo with splash line 1
     //

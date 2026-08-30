@@ -210,8 +210,13 @@ void GcodeSuite::M702() {
     #endif
     {
       // Unload length
-      const float unload_length = -ABS(parser.seen('U') ? parser.value_axis_units(E_AXIS)
-                                                        : fc_settings[target_extruder].unload_length);
+      #if ENABLED(ODOS3D_LEGACY_UI)
+        const float unload_length = -ABS(parser.seen('U') ? parser.value_axis_units(E_AXIS) : 60.0f);
+        unscaled_e_move(10.0f, 5.0f);
+      #else
+        const float unload_length = -ABS(parser.seen('U') ? parser.value_axis_units(E_AXIS)
+                                                          : fc_settings[target_extruder].unload_length);
+      #endif
 
       unload_filament(unload_length, true, PAUSE_MODE_UNLOAD_FILAMENT
         #if ALL(FILAMENT_UNLOAD_ALL_EXTRUDERS, MIXING_EXTRUDER)
