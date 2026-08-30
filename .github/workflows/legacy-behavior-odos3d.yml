@@ -73,7 +73,7 @@ jobs:
           set_define(adv, 'FILAMENT_UNLOAD_PURGE_DELAY', '0')
           set_define(adv, 'FILAMENT_UNLOAD_PURGE_LENGTH', '0')
           set_define(adv, 'FILAMENT_UNLOAD_PURGE_FEEDRATE', '5')
-          set_define(adv, 'FILAMENT_CHANGE_ALERT_BEEPS', '10', enabled=False)
+          set_define(adv, 'FILAMENT_CHANGE_ALERT_BEEPS', '-1', enabled=True)
           set_define(adv, 'FILAMENT_LOAD_UNLOAD_GCODES', enabled=True)
 
           m702_old = "      const float unload_length = -ABS(parser.seen('U') ? parser.value_axis_units(E_AXIS)\n                                                        : fc_settings[target_extruder].unload_length);\n\n      unload_filament(unload_length, true, PAUSE_MODE_UNLOAD_FILAMENT"
@@ -111,6 +111,7 @@ jobs:
             ('cfg', '#define NOZZLE_PARK_Z_RAISE_MIN 10'), ('adv', '#define ADVANCED_PAUSE_FEATURE'),
             ('adv', '#define FILAMENT_CHANGE_UNLOAD_LENGTH 100'), ('adv', '#define FILAMENT_CHANGE_FAST_LOAD_LENGTH 100'),
             ('adv', '#define ADVANCED_PAUSE_PURGE_LENGTH 0'), ('adv', '#define FILAMENT_LOAD_UNLOAD_GCODES'),
+            ('adv', '#define FILAMENT_CHANGE_ALERT_BEEPS -1'),
             ('m702', 'unscaled_e_move(10.0f, 5.0f);'), ('m702', ': 60.0f);'),
             ('tram', 'feedRate_t(8000.0f / 60.0f)'), ('tram', 'do_blocking_move_to_xy(10, 10'),
             ('lcd', 'F("Odos3D-Lab")')
