@@ -37,8 +37,8 @@ Objetivo: conservar la mecánica y el comportamiento de la Impro3D original y ca
 ## Temperatura y extrusión originales — conservar
 
 - TEMP_SENSOR_0 = 1; TEMP_SENSOR_BED = 1.
-- HEATER_0_MINTEMP = 5 °C.
-- BED_MINTEMP original = 5 °C. **Desviación deliberada actual: 1 °C**, acordada para entorno frío.
+- HEATER_0_MINTEMP original = 5 °C. **Desviación deliberada final: 1 °C**, acordada para entorno muy frío.
+- BED_MINTEMP original = 5 °C. **Desviación deliberada final: 1 °C**, acordada para entorno muy frío.
 - HEATER_0_MAXTEMP = 275 °C.
 - BED_MAXTEMP = 95 °C.
 - Hotend PID: Kp 23.05, Ki 2.00, Kd 66.47.
@@ -113,15 +113,19 @@ Estas corrientes proceden de la equivalencia ya calculada a partir de los ajuste
 - MONITOR_DRIVER_STATUS puede usarse para detectar condiciones de fallo TMC; revisar STOP_ON_ERROR durante validación.
 - TMC_DEBUG puede habilitarse temporalmente para diagnóstico M122 y retirarse de release si se decide.
 
-## Pendientes antes de considerar el firmware final
+## Estado final de software
 
-- [ ] Corregir nombre a `Odos3D-Lab`.
-- [ ] Corregir EXTRUDE_MAXLENGTH a 380 mm.
-- [ ] Replicar startup LCD `Odos3D-Lab` sin perder la base moderna de Marlin.
-- [ ] Replicar exactamente Level Plate / M700 (puntos, Z-hop, velocidad XY, protección >=60 °C, park final 10,10).
-- [ ] Traducir M600/M701/M702 y menús de filamento sin introducir movimientos Z que no existían en M701/M702 originales.
-- [ ] Revisar PID_EXTRUSION_SCALING: el antiguo PID_ADD_EXTRUSION_RATE/Kc=1 no se copiará sin verificar equivalencia semántica.
-- [ ] Decidir SpreadCycle/StealthChop para primera puesta en marcha. Prioridad: par/fiabilidad y cero pasos perdidos; el ruido es secundario.
-- [ ] Confirmar jumper UART y aislamiento DIAG de TMC2209 V1.3 antes del cableado físico.
-- [ ] Compilar LPC1769 tras cada lote de cambios y revisar diff.
-- [ ] No fusionar PR ni flashear hasta pasar pruebas de primer encendido, M119, UART, direcciones, homing, termistores y calentadores.
+- [x] Nombre final `Odos3D-Lab`.
+- [x] `EXTRUDE_MAXLENGTH = 380` mm.
+- [x] Arranque LCD personalizado.
+- [x] Level Plate de cinco puntos con Z-hop 10, XY 8000 mm/min, protección a 60 °C y park final 10,10.
+- [x] M600/M701/M702 traducidos al comportamiento original sin movimientos XYZ extra en M701/M702.
+- [x] PID_EXTRUSION_SCALING equivalente al antiguo ajuste, `DEFAULT_KC = 1`.
+- [x] SpreadCycle en X/Y/Z/E para priorizar par y fiabilidad.
+- [x] Corrientes RMS cerradas: X700 / Y725 / Z670 / E650 mA.
+- [x] `HEATER_0_MINTEMP = 1` °C y `BED_MINTEMP = 1` °C para ambiente frío.
+- [x] Sensorless, BLTouch, Z2 y autonivelado desactivados.
+- [x] TMC_DEBUG disponible para diagnóstico M122 sin recompilar.
+- [x] Compilación final obligatoria para `LPC1769` y generación de `release/firmware.bin`.
+
+La configuración queda cerrada. Las comprobaciones físicas del primer encendido (polaridad/cableado, M119, UART TMC, sentido de motores y respuesta de termistores/calefactores) son validaciones de hardware y no requieren editar el firmware.

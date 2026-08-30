@@ -1,0 +1,1 @@
+56174f5d2b33e21d35a607df5a35647e21469511f4eaa6b3ad99e3138d264f0d  release/firmware.bin
