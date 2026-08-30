@@ -1,0 +1,88 @@
+name: Refine Odos3D-Lab config
+
+on:
+  push:
+    branches: [ odos3d-skr14-tmc2209 ]
+    paths:
+      - '.github/workflows/refine-odos3d.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-build-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: odos3d-skr14-tmc2209
+          fetch-depth: 0
+
+      - name: Apply verified original-firmware corrections
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path('Marlin/Configuration.h')
+          s = p.read_text(encoding='utf-8')
+
+          def exact(old, new):
+              global s
+              n = s.count(old)
+              if n != 1:
+                  raise SystemExit(f'Expected exactly one occurrence of {old!r}, got {n}')
+              s = s.replace(old, new)
+
+          exact('#define CUSTOM_MACHINE_NAME "Odos3D.Lab"', '#define CUSTOM_MACHINE_NAME "Odos3D-Lab"')
+          exact('#define EXTRUDE_MAXLENGTH 200', '#define EXTRUDE_MAXLENGTH 380')
+          exact('#define STRING_CONFIG_H_AUTHOR "Odos3D.Lab / Impro3D migration"', '#define STRING_CONFIG_H_AUTHOR "Odos3D-Lab / Impro3D migration"')
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Verify protected migration values
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          cfg = Path('Marlin/Configuration.h').read_text(encoding='utf-8')
+          adv = Path('Marlin/Configuration_adv.h').read_text(encoding='utf-8')
+          checks = [
+            (cfg, '#define CUSTOM_MACHINE_NAME "Odos3D-Lab"'),
+            (cfg, '#define EXTRUDE_MAXLENGTH 380'),
+            (cfg, '#define DEFAULT_AXIS_STEPS_PER_UNIT { 80, 80, 4000, 100.4709576 }'),
+            (cfg, '#define HOMING_FEEDRATE_MM_M { 2000, 2000, 150 }'),
+            (cfg, '#define X_MIN_ENDSTOP_INVERTING true'),
+            (cfg, '#define Y_MIN_ENDSTOP_INVERTING true'),
+            (cfg, '#define Z_MIN_ENDSTOP_INVERTING true'),
+            (adv, '#define X_CURRENT 700'),
+            (adv, '#define Y_CURRENT 725'),
+            (adv, '#define Z_CURRENT 670'),
+            (adv, '#define E0_CURRENT 650'),
+            (adv, '#define X_RSENSE 0.11'),
+            (adv, '#define Y_RSENSE 0.11'),
+            (adv, '#define Z_RSENSE 0.11'),
+            (adv, '#define E0_RSENSE 0.11'),
+          ]
+          for text, needle in checks:
+              if needle not in text:
+                  raise SystemExit('Missing protected value: ' + needle)
+          print('Verified original-machine invariants and TMC currents.')
+          PY
+
+      - name: Install PlatformIO
+        run: python3 -m pip install --upgrade platformio
+
+      - name: Compile LPC1769
+        run: platformio run -e LPC1769
+
+      - name: Remove temporary workflow and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/refine-odos3d.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Marlin/Configuration.h .github/workflows/refine-odos3d.yml
+          git commit -m "Correct Odos3D-Lab identity and original extrusion limit"
+          git push origin HEAD:odos3d-skr14-tmc2209
