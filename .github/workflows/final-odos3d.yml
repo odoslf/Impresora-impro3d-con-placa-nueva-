@@ -1,0 +1,205 @@
+name: Odos3D final firmware
+
+on:
+  push:
+    branches:
+      - odos3d-skr14-tmc2209
+      - main
+    paths:
+      - '.github/workflows/final-odos3d.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  finalize-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Apply final cold-environment and diagnostic settings
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          cfg = Path('Marlin/Configuration.h')
+          adv = Path('Marlin/Configuration_adv.h')
+          audit = Path('docs/IMPRO3D_MIGRATION_AUDIT.md')
+
+          def set_define(path, name, value=None, enabled=True):
+              s = path.read_text(encoding='utf-8')
+              pat = re.compile(rf'(?m)^(?P<i>[ \t]*)(?://[ \t]*)?#define[ \t]+{re.escape(name)}(?:[ \t]+[^\r\n]*)?$')
+              ms = list(pat.finditer(s))
+              if len(ms) != 1:
+                  raise SystemExit(f'{path}:{name}: expected exactly one define, got {len(ms)}')
+              m = ms[0]
+              body = f'#define {name}' + (f' {value}' if value is not None else '')
+              repl = m.group('i') + (body if enabled else '//' + body)
+              path.write_text(s[:m.start()] + repl + s[m.end():], encoding='utf-8')
+
+          # El usuario trabaja en un entorno muy frío. Ambos sensores reales deben
+          # poder arrancar por debajo de 5 C, manteniendo MINTEMP y runaway activos.
+          set_define(cfg, 'HEATER_0_MINTEMP', '1')
+          set_define(cfg, 'BED_MINTEMP', '1')
+
+          # Mantener diagnóstico TMC disponible en el firmware definitivo para M122,
+          # sin tener que recompilar después del primer encendido.
+          set_define(adv, 'TMC_DEBUG', enabled=True)
+
+          s = audit.read_text(encoding='utf-8')
+          s = s.replace('- HEATER_0_MINTEMP = 5 °C.\n- BED_MINTEMP original = 5 °C. **Desviación deliberada actual: 1 °C**, acordada para entorno frío.',
+                        '- HEATER_0_MINTEMP original = 5 °C. **Desviación deliberada final: 1 °C**, acordada para entorno muy frío.\n- BED_MINTEMP original = 5 °C. **Desviación deliberada final: 1 °C**, acordada para entorno muy frío.')
+          final = '''## Estado final de software\n\n- [x] Nombre final `Odos3D-Lab`.\n- [x] `EXTRUDE_MAXLENGTH = 380` mm.\n- [x] Arranque LCD personalizado.\n- [x] Level Plate de cinco puntos con Z-hop 10, XY 8000 mm/min, protección a 60 °C y park final 10,10.\n- [x] M600/M701/M702 traducidos al comportamiento original sin movimientos XYZ extra en M701/M702.\n- [x] PID_EXTRUSION_SCALING equivalente al antiguo ajuste, `DEFAULT_KC = 1`.\n- [x] SpreadCycle en X/Y/Z/E para priorizar par y fiabilidad.\n- [x] Corrientes RMS cerradas: X700 / Y725 / Z670 / E650 mA.\n- [x] `HEATER_0_MINTEMP = 1` °C y `BED_MINTEMP = 1` °C para ambiente frío.\n- [x] Sensorless, BLTouch, Z2 y autonivelado desactivados.\n- [x] TMC_DEBUG disponible para diagnóstico M122 sin recompilar.\n- [x] Compilación final obligatoria para `LPC1769` y generación de `release/firmware.bin`.\n\nLa configuración queda cerrada. Las comprobaciones físicas del primer encendido (polaridad/cableado, M119, UART TMC, sentido de motores y respuesta de termistores/calefactores) son validaciones de hardware y no requieren editar el firmware.\n'''
+          s = re.sub(r'## Pendientes antes de considerar el firmware final\n.*\Z', final, s, flags=re.S)
+          audit.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Verify complete final configuration
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          c = Path('Marlin/Configuration.h').read_text(encoding='utf-8')
+          a = Path('Marlin/Configuration_adv.h').read_text(encoding='utf-8')
+          m = Path('Marlin/src/gcode/feature/pause/M701_M702.cpp').read_text(encoding='utf-8')
+          t = Path('Marlin/src/lcd/menu/menu_bed_tramming.cpp').read_text(encoding='utf-8')
+          l = Path('Marlin/src/lcd/HD44780/marlinui_HD44780.cpp').read_text(encoding='utf-8')
+
+          required_c = [
+            '#define MOTHERBOARD BOARD_BTT_SKR_V1_4_TURBO',
+            '#define SERIAL_PORT -1', '#define BAUDRATE 115200',
+            '#define CUSTOM_MACHINE_NAME "Odos3D-Lab"', '#define ODOS3D_LEGACY_UI',
+            '#define X_DRIVER_TYPE TMC2209', '#define Y_DRIVER_TYPE TMC2209',
+            '#define Z_DRIVER_TYPE TMC2209', '#define E0_DRIVER_TYPE TMC2209',
+            '#define TEMP_SENSOR_0 1', '#define TEMP_SENSOR_BED 1',
+            '#define HEATER_0_MINTEMP 1', '#define BED_MINTEMP 1',
+            '#define HEATER_0_MAXTEMP 275', '#define BED_MAXTEMP 95',
+            '#define DEFAULT_KP 23.05', '#define DEFAULT_KI 2.00', '#define DEFAULT_KD 66.47',
+            '#define MAX_BED_POWER 255', '#define PREVENT_COLD_EXTRUSION',
+            '#define EXTRUDE_MINTEMP 170', '#define PREVENT_LENGTHY_EXTRUDE',
+            '#define EXTRUDE_MAXLENGTH 380', '#define THERMAL_PROTECTION_HOTENDS',
+            '#define THERMAL_PROTECTION_BED', '#define ENDSTOPPULLUPS',
+            '#define X_MIN_ENDSTOP_INVERTING true', '#define Y_MIN_ENDSTOP_INVERTING true',
+            '#define Z_MIN_ENDSTOP_INVERTING true', '#define INVERT_X_DIR true',
+            '#define INVERT_Y_DIR false', '#define INVERT_Z_DIR true', '#define INVERT_E0_DIR false',
+            '#define DEFAULT_AXIS_STEPS_PER_UNIT { 80, 80, 4000, 100.4709576 }',
+            '#define DEFAULT_MAX_FEEDRATE { 250, 250, 3.3, 25 }',
+            '#define DEFAULT_MAX_ACCELERATION { 3000, 3000, 100, 10000 }',
+            '#define DEFAULT_ACCELERATION 1000', '#define DEFAULT_RETRACT_ACCELERATION 1000',
+            '#define DEFAULT_TRAVEL_ACCELERATION 1000', '#define CLASSIC_JERK',
+            '#define DEFAULT_XJERK 20.0', '#define DEFAULT_YJERK 20.0',
+            '#define DEFAULT_ZJERK 0.4', '#define DEFAULT_EJERK 5.0',
+            '#define X_HOME_DIR -1', '#define Y_HOME_DIR -1', '#define Z_HOME_DIR -1',
+            '#define X_BED_SIZE 190', '#define Y_BED_SIZE 190', '#define Z_MAX_POS 190',
+            '#define HOMING_FEEDRATE_MM_M { 2000, 2000, 150 }',
+            '#define LCD_BED_TRAMMING', '#define BED_TRAMMING_INSET_LFRB { 15, 20, 20, 20 }',
+            '#define BED_TRAMMING_Z_HOP 10.0', '#define BED_TRAMMING_INCLUDE_CENTER',
+            '#define PREHEAT_1_TEMP_HOTEND 220', '#define PREHEAT_1_TEMP_BED 45',
+            '#define PREHEAT_2_TEMP_HOTEND 240', '#define PREHEAT_2_TEMP_BED 70',
+            '#define NOZZLE_PARK_FEATURE', '#define NOZZLE_PARK_POINT { 3, 3, 0 }',
+            '#define NOZZLE_PARK_Z_RAISE_MIN 10', '#define SDSUPPORT',
+            '#define REPRAP_DISCOUNT_SMART_CONTROLLER', '#define DISPLAY_CHARSET_HD44780 WESTERN'
+          ]
+          required_a = [
+            '#define PID_EXTRUSION_SCALING', '#define DEFAULT_KC (1)',
+            '#define HOMING_BUMP_MM { 5, 5, 1 }', '#define DEFAULT_STEPPER_TIMEOUT_SEC 60',
+            '#define MANUAL_FEEDRATE { 50*60, 50*60, 4*60, 60 }',
+            '#define ADVANCED_PAUSE_FEATURE', '#define FILAMENT_LOAD_UNLOAD_GCODES',
+            '#define PAUSE_PARK_RETRACT_FEEDRATE 5', '#define PAUSE_PARK_RETRACT_LENGTH 2',
+            '#define FILAMENT_CHANGE_UNLOAD_FEEDRATE 5', '#define FILAMENT_CHANGE_UNLOAD_LENGTH 100',
+            '#define FILAMENT_CHANGE_FAST_LOAD_FEEDRATE 5', '#define FILAMENT_CHANGE_FAST_LOAD_LENGTH 100',
+            '#define ADVANCED_PAUSE_PURGE_LENGTH 0', '#define FILAMENT_CHANGE_ALERT_BEEPS -1',
+            '#define HOLD_MULTIPLIER 0.5', '#define INTERPOLATE true',
+            '#define X_CURRENT 700', '#define Y_CURRENT 725', '#define Z_CURRENT 670', '#define E0_CURRENT 650',
+            '#define X_MICROSTEPS 16', '#define Y_MICROSTEPS 16', '#define Z_MICROSTEPS 16', '#define E0_MICROSTEPS 16',
+            '#define X_RSENSE 0.11', '#define Y_RSENSE 0.11', '#define Z_RSENSE 0.11', '#define E0_RSENSE 0.11',
+            '#define MONITOR_DRIVER_STATUS', '#define STOP_ON_ERROR', '#define TMC_DEBUG'
+          ]
+          for n in required_c:
+              if n not in c: raise SystemExit('Missing Configuration.h invariant: ' + n)
+          for n in required_a:
+              if n not in a: raise SystemExit('Missing Configuration_adv.h invariant: ' + n)
+
+          # Features that must remain disabled.
+          for name, text in [('EEPROM_SETTINGS', c), ('EEPROM_CHITCHAT', c), ('PIDTEMPBED', c),
+                             ('BLTOUCH', c), ('SENSORLESS_HOMING', a), ('HYBRID_THRESHOLD', a),
+                             ('STEALTHCHOP_XY', a), ('STEALTHCHOP_Z', a), ('STEALTHCHOP_E', a),
+                             ('Z_MULTI_ENDSTOPS', a)]:
+              if re.search(rf'(?m)^[ \t]*#define[ \t]+{name}(?:[ \t]|$)', text):
+                  raise SystemExit('Must stay disabled: ' + name)
+          if re.search(r'(?m)^[ \t]*#define[ \t]+Z2_DRIVER_TYPE(?:[ \t]|$)', c):
+              raise SystemExit('Z2 driver must stay disabled')
+          if re.search(r'(?m)^[ \t]*#define[ \t]+PSU_CONTROL(?:[ \t]|$)', c):
+              raise SystemExit('PSU_CONTROL must stay disabled without confirmed PS_ON wiring')
+
+          source_checks = [
+            (m, ': 60.0f);'), (m, '0, 10.0f, 0, 0'),
+            (t, 'thermalManager.degHotend(0) >= 60'),
+            (t, 'thermalManager.set_fan_speed(0, 255);'),
+            (t, 'feedRate_t(8000.0f / 60.0f)'),
+            (t, 'do_blocking_move_to_xy(10, 10'),
+            (l, 'F("Odos3D-Lab")')
+          ]
+          for text, needle in source_checks:
+              if needle not in text: raise SystemExit('Missing source behavior: ' + needle)
+
+          print('ALL ODOS3D FINAL INVARIANTS OK')
+          PY
+
+      - name: Install PlatformIO
+        run: python3 -m pip install --upgrade platformio
+
+      - name: Compile final firmware for SKR 1.4 Turbo LPC1769
+        run: platformio run -e LPC1769
+
+      - name: Prepare flash-ready image
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .pio/build/LPC1769/firmware.bin
+          mkdir -p release
+          cp .pio/build/LPC1769/firmware.bin release/firmware.bin
+          sha256sum release/firmware.bin > release/SHA256SUMS.txt
+          cat > release/README.txt <<'EOF'
+          Odos3D-Lab - firmware final
+          Base: Marlin 2.1.2.8
+          Placa: BIGTREETECH SKR 1.4 Turbo / LPC1769
+          Drivers: BIGTREETECH TMC2209 V1.3 UART
+          Archivo para SD: firmware.bin
+          HEATER_0_MINTEMP: 1 C
+          BED_MINTEMP: 1 C
+
+          Copiar firmware.bin a la raiz de una microSD FAT32, con la impresora apagada.
+          Insertar la microSD en la SKR y encender. La placa renombra el archivo tras flashear.
+          EOF
+
+      - name: Commit finalized source and flash image on configuration branch
+        if: github.ref == 'refs/heads/odos3d-skr14-tmc2209'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Marlin/Configuration.h Marlin/Configuration_adv.h docs/IMPRO3D_MIGRATION_AUDIT.md release/README.txt release/SHA256SUMS.txt
+          git add -f release/firmware.bin
+          if ! git diff --cached --quiet; then
+            git commit -m "Finalize cold-weather Odos3D firmware and flash image"
+            git push origin HEAD:odos3d-skr14-tmc2209
+          fi
+
+      - name: Upload definitive firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Odos3D-Lab-firmware-LPC1769
+          path: |
+            release/firmware.bin
+            release/SHA256SUMS.txt
+            release/README.txt
+          if-no-files-found: error
+          retention-days: 90

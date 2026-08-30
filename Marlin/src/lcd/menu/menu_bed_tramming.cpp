@@ -31,6 +31,10 @@
 #include "menu_item.h"
 #include "../../module/motion.h"
 #include "../../module/planner.h"
+#if ENABLED(ODOS3D_LEGACY_UI)
+  #include "../../MarlinCore.h"
+  #include "../../module/temperature.h"
+#endif
 
 #if HAS_LEVELING
   #include "../../feature/bedlevel/bedlevel.h"
@@ -314,7 +318,11 @@ static void _lcd_bed_tramming_get_next_position() {
     // Select next corner coordinates
     _lcd_bed_tramming_get_next_position();
 
-    line_to_current_position(manual_feedrate_mm_s.x);
+    #if ENABLED(ODOS3D_LEGACY_UI)
+      line_to_current_position(feedRate_t(8000.0f / 60.0f));
+    #else
+      line_to_current_position(manual_feedrate_mm_s.x);
+    #endif
     line_to_z(BED_TRAMMING_HEIGHT);
     if (++bed_corner >= available_points) bed_corner = 0;
   }
@@ -341,6 +349,9 @@ void _lcd_bed_tramming_homing() {
         , _lcd_goto_next_corner
         , []{
             line_to_z(BED_TRAMMING_Z_HOP); // Raise Z off the bed when done
+            #if ENABLED(ODOS3D_LEGACY_UI)
+              do_blocking_move_to_xy(10, 10, feedRate_t(8000.0f / 60.0f));
+            #endif
             TERN_(HAS_LEVELING, set_bed_leveling_enabled(menu_leveling_was_active));
             ui.goto_previous_screen_no_defer();
           }
@@ -355,6 +366,20 @@ void _lcd_bed_tramming_homing() {
 }
 
 void _lcd_bed_tramming() {
+  #if ENABLED(ODOS3D_LEGACY_UI)
+    thermalManager.setTargetHotend(0, 0);
+    if (thermalManager.degHotend(0) >= 60) {
+      #if HAS_FAN0
+        thermalManager.set_fan_speed(0, 255);
+      #endif
+      LCD_MESSAGE(MSG_COOLING);
+      while (thermalManager.degHotend(0) >= 60) idle();
+      #if HAS_FAN0
+        thermalManager.set_fan_speed(0, 0);
+      #endif
+    }
+  #endif
+
   ui.defer_status_screen();
   if (!all_axes_trusted()) {
     set_all_unhomed();
