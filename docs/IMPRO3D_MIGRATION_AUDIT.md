@@ -46,17 +46,17 @@ Objetivo: conservar la mecánica y el comportamiento de la Impro3D original y ca
 - PREVENT_COLD_EXTRUSION equivalente al antiguo PREVENT_DANGEROUS_EXTRUDE.
 - EXTRUDE_MINTEMP = 170 °C.
 - PREVENT_LENGTHY_EXTRUDE activo.
-- EXTRUDE_MAXLENGTH original efectivo = 380 mm. **Debe ser 380 en la migración; 200 del Marlin limpio no es equivalente.**
+- EXTRUDE_MAXLENGTH original efectivo = 380 mm. **Se conserva en 380 en la migración.**
 - Preheat PLA: 220/45 °C, fan 0.
 - Preheat ABS: 240/70 °C, fan 0.
-- EEPROM desactivada en la máquina original; mantener EEPROM_SETTINGS y EEPROM_CHITCHAT desactivados.
+- EEPROM desactivada en la máquina original; EEPROM_SETTINGS y EEPROM_CHITCHAT permanecen desactivados.
 
 ## Ventiladores / alimentación originales
 
 - Tres ventiladores 40x10 estaban alimentados permanentemente con la máquina encendida.
 - Blower lateral 50x15 estaba controlado por D09 en RAMPS.
 - La cama tenía alimentación de potencia separada de 11A en RAMPS. La instalación actual usa MOSFET externo; Marlin sigue mandando la salida de cama de forma normal.
-- El firmware antiguo contiene POWER_SUPPLY 1, pero el manual no muestra PS_ON y la UI WITBOX no ofrece control de PSU. No activar PSU_CONTROL moderno sin confirmar un cable PS_ON físico.
+- El firmware antiguo contiene POWER_SUPPLY 1, pero el manual no muestra PS_ON y la UI WITBOX no ofrece control de PSU. PSU_CONTROL moderno permanece desactivado para no asumir un cable PS_ON no confirmado.
 
 ## Pantalla / SD / identidad
 
@@ -64,8 +64,7 @@ Objetivo: conservar la mecánica y el comportamiento de la Impro3D original y ca
 - Idioma original: inglés.
 - SDSUPPORT activo.
 - Nombre original: `Prusa IMPRO3D`; splash original: `Prusa I3 IMPRO3D` + `v0.0` durante ~1.5 s.
-- Nombre final acordado: **`Odos3D-Lab`**. Debe aparecer como CUSTOM_MACHINE_NAME y también en el arranque del LCD.
-- La rama inicial usa por error `Odos3D.Lab`; corregir.
+- Nombre final: **`Odos3D-Lab`**, usado en CUSTOM_MACHINE_NAME y en el arranque del LCD.
 
 ## Nivelado manual original WITBOX / M700
 
@@ -79,7 +78,7 @@ El firmware original tiene una rutina propia, no ABL:
 6. Los traslados XY de esta rutina usan XY_TRAVEL_SPEED = 8000 mm/min.
 7. La UI original pone target de hotend a 0 y no permite iniciar el nivelado con el hotend >=60 °C; durante enfriado usa blower 255.
 
-Marlin 2.1.2.8 `LCD_BED_TRAMMING` reproduce los cinco puntos con `BED_TRAMMING_INSET_LFRB {15,20,20,20}`, centro y Z-hop 10, pero de serie no reproduce el park final, la velocidad XY 8000 ni la protección de 60 °C. Estas diferencias deben resolverse antes de firmware final.
+La migración final reproduce este comportamiento sobre `LCD_BED_TRAMMING`: cinco puntos, centro, Z-hop 10, velocidad XY 8000 mm/min, protección de 60 °C con blower y aparcado final en `(10,10)`.
 
 ## Filamento original WITBOX
 
@@ -88,7 +87,7 @@ Marlin 2.1.2.8 `LCD_BED_TRAMMING` reproduce los cinco puntos con `BED_TRAMMING_I
 - Menú Unload: calienta a 220 °C y después M702.
 - M702 original: +10 mm a 5 mm/s y luego -60 mm a 5 mm/s, sin mover XYZ.
 - M600 original durante impresión: retract inicial 2 mm, Z +10, park X=3 Y=3, unload 100 mm, espera usuario y restaura posición/filamento al continuar.
-- Marlin moderno requiere ADVANCED_PAUSE_FEATURE + NOZZLE_PARK_FEATURE. La traducción debe cuidar que M701/M702 modernos usan por defecto el Z de NOZZLE_PARK_POINT, por lo que para replicar el original se deberá usar Z0 en las acciones de carga/descarga o código equivalente.
+- La migración final usa ADVANCED_PAUSE_FEATURE + NOZZLE_PARK_FEATURE y código de compatibilidad aislado por ODOS3D_LEGACY_UI para conservar esas secuencias, evitando movimientos XYZ extra en M701/M702.
 
 ## Drivers nuevos — valores cerrados
 
@@ -101,17 +100,19 @@ Hardware: 4 de los 6 BIGTREETECH TMC2209 V1.3, en X/Y/Z/E0.
 - RSENSE = 0.11 Ω en X/Y/Z/E0.
 - HOLD_MULTIPLIER = 0.5.
 - Microsteps = 16; INTERPOLATE = true.
+- SpreadCycle activo en X/Y/Z/E; HYBRID_THRESHOLD desactivado.
 - SENSORLESS_HOMING = off.
 - No BLTouch, no Z2, no Z_MULTI_ENDSTOPS, no Z_STEPPER_AUTO_ALIGN.
 
 Estas corrientes proceden de la equivalencia ya calculada a partir de los ajustes/Vref de los A4988 originales antes de que se averiaran. No volver a inferirlas desde los 2.5 A nominales del motor.
 
-## Diferencias modernas de seguridad aceptadas
+## Seguridad y diagnóstico final
 
 - THERMAL_PROTECTION_HOTENDS y THERMAL_PROTECTION_BED activas.
-- Watchdog moderno puede permanecer activo si compila/funciona correctamente en LPC1769.
-- MONITOR_DRIVER_STATUS puede usarse para detectar condiciones de fallo TMC; revisar STOP_ON_ERROR durante validación.
-- TMC_DEBUG puede habilitarse temporalmente para diagnóstico M122 y retirarse de release si se decide.
+- MONITOR_DRIVER_STATUS y STOP_ON_ERROR activos.
+- TMC_DEBUG queda activo de forma permanente para disponer de diagnóstico completo con M122 sin recompilar.
+- Sensorless permanece desactivado; los finales mecánicos son la referencia de homing.
+- La reducción de MINTEMP a 1 °C permite arrancar en el entorno frío indicado sin desactivar la protección MINTEMP ni la protección contra runaway.
 
 ## Estado final de software
 
@@ -126,6 +127,6 @@ Estas corrientes proceden de la equivalencia ya calculada a partir de los ajuste
 - [x] `HEATER_0_MINTEMP = 1` °C y `BED_MINTEMP = 1` °C para ambiente frío.
 - [x] Sensorless, BLTouch, Z2 y autonivelado desactivados.
 - [x] TMC_DEBUG disponible para diagnóstico M122 sin recompilar.
-- [x] Compilación final obligatoria para `LPC1769` y generación de `release/firmware.bin`.
+- [x] Compilación final `LPC1769` superada y `release/firmware.bin` generado.
 
-La configuración queda cerrada. Las comprobaciones físicas del primer encendido (polaridad/cableado, M119, UART TMC, sentido de motores y respuesta de termistores/calefactores) son validaciones de hardware y no requieren editar el firmware.
+La configuración de software queda cerrada. Las comprobaciones físicas del primer encendido (polaridad/cableado, M119, UART TMC, sentido de motores y respuesta de termistores/calefactores) son validaciones de hardware y no requieren editar ni recompilar el firmware.
