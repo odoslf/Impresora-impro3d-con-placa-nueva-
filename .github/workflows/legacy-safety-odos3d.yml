@@ -33,57 +33,17 @@ jobs:
           tram='Marlin/src/lcd/menu/menu_bed_tramming.cpp'
           m702='Marlin/src/gcode/feature/pause/M701_M702.cpp'
 
-          replace_once(tram,
-'''#include "../../module/planner.h"
+          old='#include "../../module/planner.h"\n\n#if HAS_LEVELING'
+          new='#include "../../module/planner.h"\n#if ENABLED(ODOS3D_LEGACY_UI)\n  #include "../../MarlinCore.h"\n  #include "../../module/temperature.h"\n#endif\n\n#if HAS_LEVELING'
+          replace_once(tram,old,new)
 
-#if HAS_LEVELING''',
-'''#include "../../module/planner.h"
-#if ENABLED(ODOS3D_LEGACY_UI)
-  #include "../../MarlinCore.h"
-  #include "../../module/temperature.h"
-#endif
+          old='void _lcd_bed_tramming() {\n  ui.defer_status_screen();'
+          new='void _lcd_bed_tramming() {\n  #if ENABLED(ODOS3D_LEGACY_UI)\n    thermalManager.setTargetHotend(0, 0);\n    if (thermalManager.degHotend(0) >= 60) {\n      #if HAS_FAN0\n        thermalManager.set_fan_speed(0, 255);\n      #endif\n      LCD_MESSAGE(MSG_COOLING);\n      while (thermalManager.degHotend(0) >= 60) idle();\n      #if HAS_FAN0\n        thermalManager.set_fan_speed(0, 0);\n      #endif\n    }\n  #endif\n\n  ui.defer_status_screen();'
+          replace_once(tram,old,new)
 
-#if HAS_LEVELING''')
-
-          replace_once(tram,
-'''void _lcd_bed_tramming() {
-  ui.defer_status_screen();''',
-'''void _lcd_bed_tramming() {
-  #if ENABLED(ODOS3D_LEGACY_UI)
-    // Impro3D WITBOX behavior: Level Plate always turns the hotend target off.
-    // Above 60C the part-cooling blower runs at full speed and the routine
-    // waits for the hotend to cool before any homing / bed movement begins.
-    thermalManager.setTargetHotend(0, 0);
-    if (thermalManager.degHotend(0) >= 60) {
-      #if HAS_FAN0
-        thermalManager.set_fan_speed(0, 255);
-      #endif
-      LCD_MESSAGE(MSG_COOLING);
-      while (thermalManager.degHotend(0) >= 60) idle();
-      #if HAS_FAN0
-        thermalManager.set_fan_speed(0, 0);
-      #endif
-    }
-  #endif
-
-  ui.defer_status_screen();''')
-
-          replace_once(m702,
-'''      #if ENABLED(ODOS3D_LEGACY_UI)
-        const float unload_length = -ABS(parser.seen('U') ? parser.value_axis_units(E_AXIS) : 60.0f);
-        unscaled_e_move(10.0f, 5.0f);
-      #else''',
-'''      #if ENABLED(ODOS3D_LEGACY_UI)
-        const float unload_length = -ABS(parser.seen('U') ? parser.value_axis_units(E_AXIS) : 60.0f);
-        // The original standalone M702 extruded +10mm then unloaded -60mm.
-        // Use the modern pause helper for the +10mm so cold-extrusion safety
-        // and temperature waiting remain active even if M702 is sent directly.
-        load_filament(
-          0, 10.0f, 0, 0,
-          false, false, PAUSE_MODE_UNLOAD_FILAMENT
-          OPTARG(DUAL_X_CARRIAGE, target_extruder)
-        );
-      #else''')
+          old="      #if ENABLED(ODOS3D_LEGACY_UI)\n        const float unload_length = -ABS(parser.seen('U') ? parser.value_axis_units(E_AXIS) : 60.0f);\n        unscaled_e_move(10.0f, 5.0f);\n      #else"
+          new="      #if ENABLED(ODOS3D_LEGACY_UI)\n        const float unload_length = -ABS(parser.seen('U') ? parser.value_axis_units(E_AXIS) : 60.0f);\n        load_filament(\n          0, 10.0f, 0, 0,\n          false, false, PAUSE_MODE_UNLOAD_FILAMENT\n          OPTARG(DUAL_X_CARRIAGE, target_extruder)\n        );\n      #else"
+          replace_once(m702,old,new)
           PY
 
       - name: Verify legacy safety invariants
