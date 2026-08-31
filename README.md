@@ -67,16 +67,27 @@ El binario resultante queda en:
 .pio/build/LPC1769/firmware.bin
 ```
 
-GitHub Actions vuelve a validar los parámetros críticos y compila el mismo entorno. El artefacto de Actions es la referencia más trazable para una compilación automática de `main`.
+## Firmware binario canónico
+
+El **único binario final de referencia** es el artefacto `Odos3D-Lab-firmware-LPC1769` generado por GitHub Actions desde el `main` actual. El repositorio no conserva un `firmware.bin` precompilado dentro del árbol para evitar que quede una copia antigua después de modificar código, configuración o CI.
+
+Cada ejecución valida los parámetros críticos, compila con `platformio run`, comprueba que realmente se ha generado una imagen LPC1769, verifica la tabla de vectores y publica:
+
+- `firmware.bin`
+- `SHA256SUMS.txt`
+- `README.txt` con el SHA exacto del commit
+
+Esto mantiene una relación inequívoca entre fuente, commit y binario.
 
 ## Flashear la SKR 1.4 Turbo
 
-1. Formatear una microSD en FAT32.
-2. Copiar `firmware.bin` a la raíz de la microSD.
-3. Apagar completamente la impresora.
-4. Insertar la microSD en **la ranura microSD de la propia SKR 1.4 Turbo**.
-5. Encender la placa y dejar que complete el arranque.
-6. Tras un flasheo correcto, el bootloader de estas placas normalmente cambia el nombre del archivo a `FIRMWARE.CUR`.
+1. Descargar el artefacto más reciente y extraer `firmware.bin`.
+2. Formatear una microSD en FAT32.
+3. Copiar `firmware.bin` a la raíz de la microSD.
+4. Apagar completamente la impresora.
+5. Insertar la microSD en **la ranura microSD de la propia SKR 1.4 Turbo**.
+6. Encender la placa y dejar que complete el arranque.
+7. Tras un flasheo correcto, el bootloader de estas placas normalmente cambia el nombre del archivo a `FIRMWARE.CUR`.
 
 La SD de la pantalla se usa para G-code durante el funcionamiento; no debe confundirse con la microSD de la placa usada para actualizar el firmware.
 
@@ -103,7 +114,6 @@ La máquina mantiene los finales mecánicos originales y no usa sensorless. No s
 - [`docs/IMPRO3D_MIGRATION_AUDIT.md`](docs/IMPRO3D_MIGRATION_AUDIT.md): comparación y decisiones de migración.
 - [`docs/BUILD_AND_FLASH.md`](docs/BUILD_AND_FLASH.md): compilación, artefactos y flasheo.
 - [`docs/WIRING_AND_FIRST_START.md`](docs/WIRING_AND_FIRST_START.md): cableado y secuencia segura de puesta en marcha.
-- [`release/`](release/): copia preparada para flasheo cuando se actualiza desde una compilación validada.
 
 ## Base Marlin y licencia
 
