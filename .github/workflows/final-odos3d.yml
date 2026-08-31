@@ -129,14 +129,34 @@ jobs:
       - name: Build default Odos3D-Lab target
         run: platformio run
 
-      - name: Prepare flash artifact
+      - name: Verify LPC1769 image and prepare flash artifact
         shell: bash
         run: |
           set -euo pipefail
           test -s .pio/build/LPC1769/firmware.bin
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+
+          data = Path('.pio/build/LPC1769/firmware.bin').read_bytes()
+          if len(data) < 8:
+              raise SystemExit('firmware.bin too small')
+          sp, reset = struct.unpack_from('<II', data, 0)
+          if not (0x10000000 <= sp <= 0x10008000):
+              raise SystemExit(f'Unexpected LPC1769 initial stack pointer: 0x{sp:08X}')
+          if not (reset & 1):
+              raise SystemExit(f'Reset vector is not Thumb: 0x{reset:08X}')
+          reset_addr = reset & ~1
+          if not (0x00000000 <= reset_addr < 0x00080000):
+              raise SystemExit(f'Reset vector outside LPC1769 flash: 0x{reset:08X}')
+          print(f'LPC1769 VECTOR OK: SP=0x{sp:08X}, RESET=0x{reset:08X}, SIZE={len(data)}')
+          PY
+
           mkdir -p artifact
           cp .pio/build/LPC1769/firmware.bin artifact/firmware.bin
           sha256sum artifact/firmware.bin > artifact/SHA256SUMS.txt
+          echo 'firmware.bin SHA256:'
+          cat artifact/SHA256SUMS.txt
           cat > artifact/README.txt <<EOF
           Odos3D-Lab - firmware para flasheo
           Commit: ${GITHUB_SHA}
