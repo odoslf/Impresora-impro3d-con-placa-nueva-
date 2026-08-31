@@ -1,75 +1,40 @@
-name: Odos3D final firmware
+name: Odos3D-Lab firmware
 
 on:
   push:
     branches:
-      - odos3d-skr14-tmc2209
       - main
-    paths:
-      - '.github/workflows/final-odos3d.yml'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  finalize-build:
+  validate-and-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
+      - name: Checkout
+        uses: actions/checkout@v5
 
-      - name: Apply final cold-environment and diagnostic settings
+      - name: Verify Odos3D-Lab configuration
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
 
-          cfg = Path('Marlin/Configuration.h')
-          adv = Path('Marlin/Configuration_adv.h')
-          audit = Path('docs/IMPRO3D_MIGRATION_AUDIT.md')
-
-          def set_define(path, name, value=None, enabled=True):
-              s = path.read_text(encoding='utf-8')
-              pat = re.compile(rf'(?m)^(?P<i>[ \t]*)(?://[ \t]*)?#define[ \t]+{re.escape(name)}(?:[ \t]+[^\r\n]*)?$')
-              ms = list(pat.finditer(s))
-              if len(ms) != 1:
-                  raise SystemExit(f'{path}:{name}: expected exactly one define, got {len(ms)}')
-              m = ms[0]
-              body = f'#define {name}' + (f' {value}' if value is not None else '')
-              repl = m.group('i') + (body if enabled else '//' + body)
-              path.write_text(s[:m.start()] + repl + s[m.end():], encoding='utf-8')
-
-          # El usuario trabaja en un entorno muy frío. Ambos sensores reales deben
-          # poder arrancar por debajo de 5 C, manteniendo MINTEMP y runaway activos.
-          set_define(cfg, 'HEATER_0_MINTEMP', '1')
-          set_define(cfg, 'BED_MINTEMP', '1')
-
-          # Mantener diagnóstico TMC disponible en el firmware definitivo para M122,
-          # sin tener que recompilar después del primer encendido.
-          set_define(adv, 'TMC_DEBUG', enabled=True)
-
-          s = audit.read_text(encoding='utf-8')
-          s = s.replace('- HEATER_0_MINTEMP = 5 °C.\n- BED_MINTEMP original = 5 °C. **Desviación deliberada actual: 1 °C**, acordada para entorno frío.',
-                        '- HEATER_0_MINTEMP original = 5 °C. **Desviación deliberada final: 1 °C**, acordada para entorno muy frío.\n- BED_MINTEMP original = 5 °C. **Desviación deliberada final: 1 °C**, acordada para entorno muy frío.')
-          final = '''## Estado final de software\n\n- [x] Nombre final `Odos3D-Lab`.\n- [x] `EXTRUDE_MAXLENGTH = 380` mm.\n- [x] Arranque LCD personalizado.\n- [x] Level Plate de cinco puntos con Z-hop 10, XY 8000 mm/min, protección a 60 °C y park final 10,10.\n- [x] M600/M701/M702 traducidos al comportamiento original sin movimientos XYZ extra en M701/M702.\n- [x] PID_EXTRUSION_SCALING equivalente al antiguo ajuste, `DEFAULT_KC = 1`.\n- [x] SpreadCycle en X/Y/Z/E para priorizar par y fiabilidad.\n- [x] Corrientes RMS cerradas: X700 / Y725 / Z670 / E650 mA.\n- [x] `HEATER_0_MINTEMP = 1` °C y `BED_MINTEMP = 1` °C para ambiente frío.\n- [x] Sensorless, BLTouch, Z2 y autonivelado desactivados.\n- [x] TMC_DEBUG disponible para diagnóstico M122 sin recompilar.\n- [x] Compilación final obligatoria para `LPC1769` y generación de `release/firmware.bin`.\n\nLa configuración queda cerrada. Las comprobaciones físicas del primer encendido (polaridad/cableado, M119, UART TMC, sentido de motores y respuesta de termistores/calefactores) son validaciones de hardware y no requieren editar el firmware.\n'''
-          s = re.sub(r'## Pendientes antes de considerar el firmware final\n.*\Z', final, s, flags=re.S)
-          audit.write_text(s, encoding='utf-8')
-          PY
-
-      - name: Verify complete final configuration
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
+          pio = Path('platformio.ini').read_text(encoding='utf-8')
           c = Path('Marlin/Configuration.h').read_text(encoding='utf-8')
           a = Path('Marlin/Configuration_adv.h').read_text(encoding='utf-8')
           m = Path('Marlin/src/gcode/feature/pause/M701_M702.cpp').read_text(encoding='utf-8')
           t = Path('Marlin/src/lcd/menu/menu_bed_tramming.cpp').read_text(encoding='utf-8')
           l = Path('Marlin/src/lcd/HD44780/marlinui_HD44780.cpp').read_text(encoding='utf-8')
+
+          if not re.search(r'(?m)^default_envs\s*=\s*LPC1769\s*$', pio):
+              raise SystemExit('platformio.ini must default to LPC1769')
 
           required_c = [
             '#define MOTHERBOARD BOARD_BTT_SKR_V1_4_TURBO',
@@ -119,24 +84,29 @@ jobs:
             '#define X_CURRENT 700', '#define Y_CURRENT 725', '#define Z_CURRENT 670', '#define E0_CURRENT 650',
             '#define X_MICROSTEPS 16', '#define Y_MICROSTEPS 16', '#define Z_MICROSTEPS 16', '#define E0_MICROSTEPS 16',
             '#define X_RSENSE 0.11', '#define Y_RSENSE 0.11', '#define Z_RSENSE 0.11', '#define E0_RSENSE 0.11',
+            '#define CHOPPER_TIMING CHOPPER_DEFAULT_12V',
             '#define MONITOR_DRIVER_STATUS', '#define STOP_ON_ERROR', '#define TMC_DEBUG'
           ]
-          for n in required_c:
-              if n not in c: raise SystemExit('Missing Configuration.h invariant: ' + n)
-          for n in required_a:
-              if n not in a: raise SystemExit('Missing Configuration_adv.h invariant: ' + n)
 
-          # Features that must remain disabled.
-          for name, text in [('EEPROM_SETTINGS', c), ('EEPROM_CHITCHAT', c), ('PIDTEMPBED', c),
-                             ('BLTOUCH', c), ('SENSORLESS_HOMING', a), ('HYBRID_THRESHOLD', a),
-                             ('STEALTHCHOP_XY', a), ('STEALTHCHOP_Z', a), ('STEALTHCHOP_E', a),
-                             ('Z_MULTI_ENDSTOPS', a)]:
+          for needle in required_c:
+              if needle not in c:
+                  raise SystemExit('Missing Configuration.h invariant: ' + needle)
+          for needle in required_a:
+              if needle not in a:
+                  raise SystemExit('Missing Configuration_adv.h invariant: ' + needle)
+
+          disabled = [
+            ('EEPROM_SETTINGS', c), ('EEPROM_CHITCHAT', c), ('PIDTEMPBED', c),
+            ('BLTOUCH', c), ('PSU_CONTROL', c),
+            ('SENSORLESS_HOMING', a), ('HYBRID_THRESHOLD', a),
+            ('STEALTHCHOP_XY', a), ('STEALTHCHOP_Z', a), ('STEALTHCHOP_E', a),
+            ('Z_MULTI_ENDSTOPS', a)
+          ]
+          for name, text in disabled:
               if re.search(rf'(?m)^[ \t]*#define[ \t]+{name}(?:[ \t]|$)', text):
                   raise SystemExit('Must stay disabled: ' + name)
           if re.search(r'(?m)^[ \t]*#define[ \t]+Z2_DRIVER_TYPE(?:[ \t]|$)', c):
               raise SystemExit('Z2 driver must stay disabled')
-          if re.search(r'(?m)^[ \t]*#define[ \t]+PSU_CONTROL(?:[ \t]|$)', c):
-              raise SystemExit('PSU_CONTROL must stay disabled without confirmed PS_ON wiring')
 
           source_checks = [
             (m, ': 60.0f);'), (m, '0, 10.0f, 0, 0'),
@@ -147,59 +117,46 @@ jobs:
             (l, 'F("Odos3D-Lab")')
           ]
           for text, needle in source_checks:
-              if needle not in text: raise SystemExit('Missing source behavior: ' + needle)
+              if needle not in text:
+                  raise SystemExit('Missing Odos3D behavior: ' + needle)
 
-          print('ALL ODOS3D FINAL INVARIANTS OK')
+          print('ALL ODOS3D-LAB INVARIANTS OK')
           PY
 
       - name: Install PlatformIO
         run: python3 -m pip install --upgrade platformio
 
-      - name: Compile final firmware for SKR 1.4 Turbo LPC1769
-        run: platformio run -e LPC1769
+      - name: Build default Odos3D-Lab target
+        run: platformio run
 
-      - name: Prepare flash-ready image
+      - name: Prepare flash artifact
         shell: bash
         run: |
           set -euo pipefail
           test -s .pio/build/LPC1769/firmware.bin
-          mkdir -p release
-          cp .pio/build/LPC1769/firmware.bin release/firmware.bin
-          sha256sum release/firmware.bin > release/SHA256SUMS.txt
-          cat > release/README.txt <<'EOF'
-          Odos3D-Lab - firmware final
+          mkdir -p artifact
+          cp .pio/build/LPC1769/firmware.bin artifact/firmware.bin
+          sha256sum artifact/firmware.bin > artifact/SHA256SUMS.txt
+          cat > artifact/README.txt <<EOF
+          Odos3D-Lab - firmware para flasheo
+          Commit: ${GITHUB_SHA}
           Base: Marlin 2.1.2.8
           Placa: BIGTREETECH SKR 1.4 Turbo / LPC1769
           Drivers: BIGTREETECH TMC2209 V1.3 UART
-          Archivo para SD: firmware.bin
+          Alimentacion: 12 V
+          Archivo: firmware.bin
           HEATER_0_MINTEMP: 1 C
           BED_MINTEMP: 1 C
 
-          Copiar firmware.bin a la raiz de una microSD FAT32, con la impresora apagada.
-          Insertar la microSD en la SKR y encender. La placa renombra el archivo tras flashear.
+          Copiar firmware.bin a la raiz de una microSD FAT32 con la impresora apagada.
+          Insertar la microSD en la ranura de la SKR 1.4 Turbo y encender.
+          Antes de G28: comprobar UART con M122 y finales de carrera con M119.
           EOF
 
-      - name: Commit finalized source and flash image on configuration branch
-        if: github.ref == 'refs/heads/odos3d-skr14-tmc2209'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Marlin/Configuration.h Marlin/Configuration_adv.h docs/IMPRO3D_MIGRATION_AUDIT.md release/README.txt release/SHA256SUMS.txt
-          git add -f release/firmware.bin
-          if ! git diff --cached --quiet; then
-            git commit -m "Finalize cold-weather Odos3D firmware and flash image"
-            git push origin HEAD:odos3d-skr14-tmc2209
-          fi
-
-      - name: Upload definitive firmware artifact
+      - name: Upload Odos3D-Lab firmware
         uses: actions/upload-artifact@v4
         with:
           name: Odos3D-Lab-firmware-LPC1769
-          path: |
-            release/firmware.bin
-            release/SHA256SUMS.txt
-            release/README.txt
+          path: artifact/
           if-no-files-found: error
           retention-days: 90
